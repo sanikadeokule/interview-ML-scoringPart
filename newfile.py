@@ -5,26 +5,36 @@ import torch
 from pydub import AudioSegment
 import os
 from flask import Flask, request, jsonify
+from threading import Lock
 
-# 1. Load transcription pipeline
-whisper = pipeline("automatic-speech-recognition", model="openai/whisper-small")
+app = Flask(__name__)
 
-# 2. Load AI rating model
-model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name)
+# Globals for lazy loading
+whisper = None
+tokenizer = None
+model = None
+model_lock = Lock()
 
-# Function: Transcribe audio
+def load_models():
+    global whisper, tokenizer, model
+    with model_lock:
+        if whisper is None:
+            whisper = pipeline("automatic-speech-recognition", model="openai/whisper-tiny")
+        if tokenizer is None or model is None:
+            model_name = "cross-encoder/ms-marco-MiniLM-L-2-v2"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForSequenceClassification.from_pretrained(model_name)
+
 def get_audio_transcription(audio_path):
+    load_models()
     result = whisper(audio_path)
     return result['text']
 
-# Function: Translate to English
 def translate_to_english(text):
     return GoogleTranslator(source='auto', target='en').translate(text)
 
-# Function: Rate answer correctness
 def get_ai_rating(question, answer):
+    load_models()
     inputs = tokenizer(question, answer, return_tensors='pt', truncation=True)
     with torch.no_grad():
         outputs = model(**inputs)
@@ -44,9 +54,6 @@ def convert_to_wav_if_needed(input_path):
     except Exception as e:
         print(f"❌ Error converting to WAV: {e}")
         return None
-
-# Flask app
-app = Flask(__name__)
 
 def get_question_from_backend():
     # Replace this with your backend logic (DB/config fetch)
