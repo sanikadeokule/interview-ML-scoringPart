@@ -1,0 +1,6 @@
+flask
+torch
+transformers
+pydub
+torchaudio
+deep-translator
