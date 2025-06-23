@@ -59,7 +59,28 @@ def get_question_from_backend():
     # Replace this with your backend logic (DB/config fetch)
     return "What is binary search?"
 
-# ...existing code...
+def get_question_domain(question):
+    # Simple keyword-based domain extraction
+    q = question.lower()
+    if any(word in q for word in ["search", "sort", "array", "tree", "algorithm", "complexity"]):
+        return "Data Structures & Algorithms"
+    if any(word in q for word in ["database", "sql", "table", "query"]):
+        return "Databases"
+    if any(word in q for word in ["python", "java", "c++", "language", "code", "programming"]):
+        return "Programming"
+    if any(word in q for word in ["network", "protocol", "ip", "tcp", "udp"]):
+        return "Networking"
+    if any(word in q for word in ["os", "operating system", "process", "thread", "memory"]):
+        return "Operating Systems"
+    if any(word in q for word in ["ml", "machine learning", "model", "training", "ai"]):
+        return "Machine Learning"
+    if any(word in q for word in ["web", "html", "css", "javascript", "frontend", "backend"]):
+        return "Web Development"
+    if any(word in q for word in ["cloud", "aws", "azure", "gcp", "deployment"]):
+        return "Cloud Computing"
+    if any(word in q for word in ["capital", "country", "city"]):
+        return "General Knowledge"
+    return "Other"
 
 @app.route("/", methods=["GET"])
 def home():
@@ -81,6 +102,7 @@ def evaluate():
 
     # Get question from backend
     question = get_question_from_backend()
+    domain = get_question_domain(question)
 
     # Process
     spoken_text = get_audio_transcription(wav_path)
@@ -97,10 +119,12 @@ def evaluate():
 
     return jsonify({
         "question": question,
+        "domain": domain,
         "transcribed": spoken_text,
         "translated": translated_answer,
         "rating": rating
     })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
