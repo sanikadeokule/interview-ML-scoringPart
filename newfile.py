@@ -6,6 +6,8 @@ from pydub import AudioSegment
 import os
 from flask import Flask, request, jsonify
 from threading import Lock
+import librosa
+import numpy as np
 
 app = Flask(__name__)
 
@@ -29,6 +31,22 @@ def get_audio_transcription(audio_path):
     load_models()
     result = whisper(audio_path)
     return result['text']
+
+def extract_voice_features(audio_path):
+    y, sr = librosa.load(audio_path)
+    rms = librosa.feature.rms(y=y).mean()
+    pitch_track = librosa.yin(y, fmin=50, fmax=300)
+    pitch = pitch_track.mean()
+    pitch_std = pitch_track.std()
+    return {"rms": float(rms), "pitch": float(pitch), "pitch_std": float(pitch_std)}
+
+def basic_confidence_score(features):
+    # Simple proxy: louder and more stable pitch = more confident
+    # Normalize values for a 0-100 score
+    rms_score = min(features["rms"] * 5000, 100)  # scale RMS
+    pitch_stability = max(0, 50 - features["pitch_std"])  # less pitch variation = more confident
+    score = (rms_score * 0.6) + (pitch_stability * 0.4)
+    return round(min(max(score, 0), 100), 2)
 
 def translate_to_english(text):
     return GoogleTranslator(source='auto', target='en').translate(text)
@@ -60,7 +78,6 @@ def get_question_from_backend():
     return "What is binary search?"
 
 def get_question_domain(question):
-    # Simple keyword-based domain extraction
     q = question.lower()
     if any(word in q for word in ["search", "sort", "array", "tree", "algorithm", "complexity"]):
         return "Data Structures & Algorithms"
@@ -88,28 +105,25 @@ def home():
 
 @app.route("/", methods=["POST"])
 def evaluate():
-    # Get audio file from frontend
     if "audio" not in request.files:
         return jsonify({"error": "No audio file uploaded"}), 400
     audio_file = request.files["audio"]
     temp_path = "temp_uploaded_audio"
     audio_file.save(temp_path)
 
-    # Convert to wav if needed
     wav_path = convert_to_wav_if_needed(temp_path)
     if not wav_path:
         return jsonify({"error": "Could not convert audio"}), 500
 
-    # Get question from backend
     question = get_question_from_backend()
     domain = get_question_domain(question)
 
-    # Process
     spoken_text = get_audio_transcription(wav_path)
     translated_answer = translate_to_english(spoken_text)
     rating = get_ai_rating(question, translated_answer)
+    features = extract_voice_features(wav_path)
+    confidence = basic_confidence_score(features)
 
-    # Clean up temp files
     try:
         os.remove(temp_path)
         if wav_path != temp_path:
@@ -122,7 +136,8 @@ def evaluate():
         "domain": domain,
         "transcribed": spoken_text,
         "translated": translated_answer,
-        "rating": rating
+        "rating": rating,
+        "confidence": confidence  # Added confidence score
     })
 
 if __name__ == "__main__":
