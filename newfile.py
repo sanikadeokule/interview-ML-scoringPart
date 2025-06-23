@@ -6,8 +6,6 @@ from pydub import AudioSegment
 import os
 from flask import Flask, request, jsonify
 from threading import Lock
-import librosa
-import numpy as np
 
 app = Flask(__name__)
 
@@ -21,60 +19,60 @@ def load_models():
     global whisper, tokenizer, model
     with model_lock:
         if whisper is None:
-            whisper = pipeline("automatic-speech-recognition", model="openai/whisper-tiny")
+            try:
+                whisper = pipeline("automatic-speech-recognition", model="openai/whisper-tiny")
+                print("✅ Whisper model loaded.")
+            except Exception as e:
+                print(f"❌ Whisper load error: {e}")
         if tokenizer is None or model is None:
-            model_name = "cross-encoder/ms-marco-MiniLM-L-2-v2"
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            model = AutoModelForSequenceClassification.from_pretrained(model_name)
+            try:
+                model_name = "cross-encoder/ms-marco-MiniLM-L-2-v2"
+                tokenizer = AutoTokenizer.from_pretrained(model_name)
+                model = AutoModelForSequenceClassification.from_pretrained(model_name)
+                print("✅ Cross-encoder model loaded.")
+            except Exception as e:
+                print(f"❌ Model/tokenizer load error: {e}")
 
 def get_audio_transcription(audio_path):
     load_models()
+    print(f"🔍 Transcribing audio: {audio_path}")
     result = whisper(audio_path)
+    print(f"📝 Transcription result: {result['text']}")
     return result['text']
 
-def extract_voice_features(audio_path):
-    y, sr = librosa.load(audio_path)
-    rms = librosa.feature.rms(y=y).mean()
-    pitch_track = librosa.yin(y, fmin=50, fmax=300)
-    pitch = pitch_track.mean()
-    pitch_std = pitch_track.std()
-    return {"rms": float(rms), "pitch": float(pitch), "pitch_std": float(pitch_std)}
-
-def basic_confidence_score(features):
-    # Simple proxy: louder and more stable pitch = more confident
-    # Normalize values for a 0-100 score
-    rms_score = min(features["rms"] * 5000, 100)  # scale RMS
-    pitch_stability = max(0, 50 - features["pitch_std"])  # less pitch variation = more confident
-    score = (rms_score * 0.6) + (pitch_stability * 0.4)
-    return round(min(max(score, 0), 100), 2)
-
 def translate_to_english(text):
-    return GoogleTranslator(source='auto', target='en').translate(text)
+    print(f"🌐 Translating: {text}")
+    translated = GoogleTranslator(source='auto', target='en').translate(text)
+    print(f"➡️ Translated to English: {translated}")
+    return translated
 
 def get_ai_rating(question, answer):
     load_models()
+    print(f"🎯 Getting AI score for:\nQ: {question}\nA: {answer}")
     inputs = tokenizer(question, answer, return_tensors='pt', truncation=True)
     with torch.no_grad():
         outputs = model(**inputs)
         score = torch.sigmoid(outputs.logits)[0].item()
-        return round(score * 100, 2)  # Return score out of 100
+        print(f"📊 Raw Score: {score}")
+        return round(score * 100, 2)
 
 def convert_to_wav_if_needed(input_path):
     if input_path.lower().endswith(".wav"):
-        return input_path  # No need to convert
+        print("✅ Already WAV format.")
+        return input_path
 
     output_path = os.path.splitext(input_path)[0] + ".wav"
     try:
+        print("🎧 Converting audio to WAV using pydub...")
         audio = AudioSegment.from_file(input_path)
         audio.export(output_path, format="wav")
-        print(f"🎧 Converted to WAV: {output_path}")
+        print(f"✅ Conversion successful: {output_path}")
         return output_path
     except Exception as e:
-        print(f"❌ Error converting to WAV: {e}")
+        print(f"❌ Error during audio conversion: {e}")
         return None
 
 def get_question_from_backend():
-    # Replace this with your backend logic (DB/config fetch)
     return "What is binary search?"
 
 def get_question_domain(question):
@@ -101,43 +99,48 @@ def get_question_domain(question):
 
 @app.route("/", methods=["GET"])
 def home():
-    return "API is running. Use POST / with an audio file (key: audio)."
+    return "✅ API is running. Use POST / with form-data key: 'audio'."
 
 @app.route("/", methods=["POST"])
 def evaluate():
+    print("📩 POST request received.")
     if "audio" not in request.files:
+        print("❌ No audio file found in request.")
         return jsonify({"error": "No audio file uploaded"}), 400
+
     audio_file = request.files["audio"]
     temp_path = "temp_uploaded_audio"
     audio_file.save(temp_path)
+    print(f"📁 Audio file saved at: {temp_path}")
 
     wav_path = convert_to_wav_if_needed(temp_path)
     if not wav_path:
+        print("❌ Failed to convert audio to WAV.")
         return jsonify({"error": "Could not convert audio"}), 500
 
     question = get_question_from_backend()
     domain = get_question_domain(question)
+    print(f"❓ Question: {question} | 🏷️ Domain: {domain}")
 
     spoken_text = get_audio_transcription(wav_path)
     translated_answer = translate_to_english(spoken_text)
     rating = get_ai_rating(question, translated_answer)
-    features = extract_voice_features(wav_path)
-    confidence = basic_confidence_score(features)
 
+    # Clean up
     try:
         os.remove(temp_path)
         if wav_path != temp_path:
             os.remove(wav_path)
-    except Exception:
-        pass
+        print("🧹 Temp files cleaned.")
+    except Exception as e:
+        print(f"⚠️ Cleanup failed: {e}")
 
     return jsonify({
         "question": question,
         "domain": domain,
         "transcribed": spoken_text,
         "translated": translated_answer,
-        "rating": rating,
-        "confidence": confidence  # Added confidence score
+        "rating": rating
     })
 
 if __name__ == "__main__":
