@@ -7,3 +7,4 @@ torchaudio
 googletrans==4.0.0rc1
 gunicorn
 imageio-ffmpeg
+deep-translator
