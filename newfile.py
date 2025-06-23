@@ -39,7 +39,7 @@ def get_ai_rating(question, answer):
     with torch.no_grad():
         outputs = model(**inputs)
         score = torch.sigmoid(outputs.logits)[0].item()
-        return round(score * 10, 2)  # Return score out of 10
+        return round(score * 100, 2)  # Return score out of 100
 
 def convert_to_wav_if_needed(input_path):
     if input_path.lower().endswith(".wav"):
@@ -57,9 +57,15 @@ def convert_to_wav_if_needed(input_path):
 
 def get_question_from_backend():
     # Replace this with your backend logic (DB/config fetch)
-    return "What is the capital of France?"
+    return "What is binary search?"
 
-@app.route("/evaluate", methods=["POST"])
+# ...existing code...
+
+@app.route("/", methods=["GET"])
+def home():
+    return "API is running. Use POST / with an audio file (key: audio)."
+
+@app.route("/", methods=["POST"])
 def evaluate():
     # Get audio file from frontend
     if "audio" not in request.files:
