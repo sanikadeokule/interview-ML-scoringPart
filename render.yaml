@@ -1,7 +1,11 @@
 services:
   - type: web
-    name: flask-audio-app
+    name: interview-ml-scoringpart-4
     env: python
-
-    plan: free
-    envVars: []
+    buildCommand: |
+      apt-get update && apt-get install -y ffmpeg
+      pip install -r requirements.txt
+    startCommand: gunicorn newfile:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PORT
+        value: 10000
